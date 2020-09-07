@@ -16,6 +16,7 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 public class GitHubClient {
@@ -68,9 +69,27 @@ public class GitHubClient {
 		return new ArrayList<>();
 	}
 	
-	private List<Item> getItemList(JSONArray array) {
+	private List<Item> getItemList(JSONArray array) throws JSONException {
 		List<Item> itemList = new ArrayList<>();
-		for (int i = 0; i < array.length(); ++i) {
+		List<String> descriptionList = new ArrayList<>();
+		
+		for (int i = 0; i < array.length(); i++) {
+			// We need to extract keywords from description since GitHub API
+			// doesn't return keywords.
+			String description = getStringFieldOrEmpty(array.getJSONObject(i), "description");
+			if (description.equals("") || description.equals("\n")) {
+				descriptionList.add(getStringFieldOrEmpty(array.getJSONObject(i), "title"));
+			} else {
+				descriptionList.add(description);
+			}	
+		}
+
+		// We need to get keywords from multiple text in one request since
+		// MonkeyLearnAPI has limitations on request per minute.
+		List<List<String>> keywords = MonkeyLearnClient
+				.extractKeywords(descriptionList.toArray(new String[descriptionList.size()]));
+
+		for (int i = 0; i < array.length(); i++) {
 			JSONObject object = array.getJSONObject(i);
 			Item item = Item.builder()
 					.itemId(getStringFieldOrEmpty(object, "id"))
@@ -78,12 +97,14 @@ public class GitHubClient {
 					.address(getStringFieldOrEmpty(object, "location"))
 					.url(getStringFieldOrEmpty(object, "url"))
 					.imageUrl(getStringFieldOrEmpty(object, "company_logo"))
-					.build();	
+					.keywords(new HashSet<String>(keywords.get(i)))
+					.build();
 			itemList.add(item);
 		}
-		
+
 		return itemList;
 	}
+
 	
 	private String getStringFieldOrEmpty(JSONObject obj, String field) {
 		return obj.isNull(field) ? "" : obj.getString(field);
